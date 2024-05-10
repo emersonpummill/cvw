@@ -29,6 +29,11 @@ export PATH=$PATH:$RISCV/bin
 # Verilator
 export PATH=/usr/local/bin/verilator:$PATH # Change this for your path to Verilator
 
+# environment variables needed for RISCV-DV
+export RISCV_GCC=`which riscv64-unknown-elf-gcc`		            # Copy this as it is
+export RISCV_OBJCOPY=`which riscv64-unknown-elf-objcopy`	        # Copy this as it is
+export SPIKE_PATH=/usr/bin											# Change this for your path to riscv-isa-sim (spike)
+
 # Imperas OVPsim; put this in if you are using it
 #export PATH=$RISCV/imperas-riscv-tests/riscv-ovpsim-plus/bin/Linux64:$PATH  
 #export LD_LIBRARY_PATH=$RISCV/imperas_riscv_tests/riscv-ovpsim-plus/bin/Linux64:$LD_LIBRARY_PATH
@@ -43,4 +48,5 @@ if [ -e "$IDV" ]; then
     setupImperas ${IMPERAS_HOME}
     export PATH=$IDV/scripts/cvw:$PATH
 fi
+
 

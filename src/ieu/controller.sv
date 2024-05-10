@@ -219,23 +219,23 @@ module controller import cvw::*;  #(parameter cvw_t P) (
     assign CSRFunctD        = Funct3D[1:0] != 2'b00; 
     assign IWValidFunct3D   = Funct3D == 3'b000 | Funct3D == 3'b001 | Funct3D == 3'b101;
   end else begin:legalcheck2
-    assign IFunctD = 1; // Don't bother to separate out shift decoding
+    assign IFunctD = 1'b1; // Don't bother to separate out shift decoding
     assign RFunctD = ~Funct7D[0]; // Not a multiply
     assign MFunctD = Funct7D[0] & (P.M_SUPPORTED | (P.ZMMUL_SUPPORTED & ~Funct3D[2])); // muldiv
-    assign LFunctD = 1; // don't bother to check Funct3 for loads
-    assign FLSFunctD = 1; // don't bother to check Func3 for floating-point loads/stores
-    assign FenceFunctD = 1; // don't bother to check fields for fences
-    assign CMOFunctD = 1; // don't bother to check fields for CMO instructions
-    assign AFunctD = 1; // don't bother to check fields for atomics
-    assign AMOFunctD = 1; // don't bother to check Funct7 for AMO operations
-    assign RWFunctD = 1; // don't bother to check fields for RW instructions
-    assign MWFunctD = 1; // don't bother to check fields for MW instructions
-    assign SFunctD = 1; // don't bother to check Funct3 for stores
-    assign BFunctD = 1; // don't bother to check Funct3 for branches
-    assign JRFunctD = 1; // don't bother to check Funct3 for jalrs
-    assign PFunctD = 1; // don't bother to check fields for privileged instructions
-    assign CSRFunctD = 1; // don't bother to check Funct3 for CSR operations
-    assign IWValidFunct3D = 1;
+    assign LFunctD = 1'b1; // don't bother to check Funct3 for loads
+    assign FLSFunctD = 1'b1; // don't bother to check Func3 for floating-point loads/stores
+    assign FenceFunctD = 1'b1; // don't bother to check fields for fences
+    assign CMOFunctD = 1'b1; // don't bother to check fields for CMO instructions
+    assign AFunctD = 1'b1; // don't bother to check fields for atomics
+    assign AMOFunctD = 1'b1; // don't bother to check Funct7 for AMO operations
+    assign RWFunctD = 1'b1; // don't bother to check fields for RW instructions
+    assign MWFunctD = 1'b1; // don't bother to check fields for MW instructions
+    assign SFunctD = 1'b1; // don't bother to check Funct3 for stores
+    assign BFunctD = 1'b1; // don't bother to check Funct3 for branches
+    assign JRFunctD = 1'b1; // don't bother to check Funct3 for jalrs
+    assign PFunctD = 1'b1; // don't bother to check fields for privileged instructions
+    assign CSRFunctD = 1'b1; // don't bother to check Funct3 for CSR operations
+    assign IWValidFunct3D = 1'b1;
   end
 
   // Main Instruction Decoder
@@ -265,12 +265,12 @@ module controller import cvw::*;  #(parameter cvw_t P) (
                       ControlsD = `CTRLW'b0_001_01_01_000_0_0_0_0_0_0_0_0_0_00_0_0; // stores
       7'b0100111: if (FLSFunctD)
                       ControlsD = `CTRLW'b0_001_01_01_000_0_0_0_0_0_0_0_0_0_00_0_1; // fsw - only legal if FP supported
-      7'b0101111: if (P.A_SUPPORTED & AFunctD) begin
-                    if (InstrD[31:27] == 5'b00010 & Rs2D == 5'b0)
+      7'b0101111: if (AFunctD) begin
+                    if ((P.A_SUPPORTED | P.ZALRSC_SUPPORTED) & InstrD[31:27] == 5'b00010 & Rs2D == 5'b0)
                       ControlsD = `CTRLW'b1_000_00_10_001_0_0_0_0_0_0_0_0_0_01_0_0; // lr
-                    else if (InstrD[31:27] == 5'b00011)
+                    else if ((P.A_SUPPORTED | P.ZALRSC_SUPPORTED) & InstrD[31:27] == 5'b00011)
                       ControlsD = `CTRLW'b1_101_01_01_100_0_0_0_0_0_0_0_0_0_01_0_0; // sc
-                    else if (AMOFunctD) 
+                    else if ((P.A_SUPPORTED | P.ZAAMO_SUPPORTED) & AMOFunctD) 
                       ControlsD = `CTRLW'b1_101_01_11_001_0_0_0_0_0_0_0_0_0_10_0_0; // amo
                  end
       7'b0110011: if (RFunctD)
@@ -378,8 +378,8 @@ module controller import cvw::*;  #(parameter cvw_t P) (
     assign InvalidateICacheD = FenceID;
     assign FlushDCacheD = FenceID;
   end else begin:fencei
-    assign InvalidateICacheD = 0;
-    assign FlushDCacheD = 0;
+    assign InvalidateICacheD = 1'b0;
+    assign FlushDCacheD = 1'b0;
   end
 
   // Cache Management instructions

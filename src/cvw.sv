@@ -66,6 +66,8 @@ typedef struct packed {
   logic         SVPBMT_SUPPORTED;
   logic         SVNAPOT_SUPPORTED;
   logic         SVINVAL_SUPPORTED;
+  logic         ZAAMO_SUPPORTED;
+  logic         ZALRSC_SUPPORTED;
 
   // Microarchitectural Features
   logic         BUS_SUPPORTED;
@@ -295,7 +297,6 @@ typedef struct packed {
   int DURLEN     ;
   int DIVb       ;
   int DIVBLEN    ;
-
 } cvw_t;
 
 endpackage

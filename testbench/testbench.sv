@@ -33,12 +33,8 @@
     `include "idv/idv.svh"
 `endif
 
+
 import cvw::*;
-`ifdef VERILATOR
-import "DPI-C" function string getenvval(input string env_name);
-`else
-import "DPI-C" function string getenv(input string env_name);
-`endif
 
 module testbench;
   /* verilator lint_off WIDTHTRUNC */
@@ -55,7 +51,17 @@ module testbench;
     import idvApiPkg::*;
   `endif
 
-`include "parameter-defs.vh"
+  `ifdef VERILATOR
+      import "DPI-C" function string getenvval(input string env_name);
+      string       RISCV_DIR = getenvval("RISCV"); // "/opt/riscv";
+  `elsif SIM_VCS 
+      import "DPI-C" function string getenv(input string env_name);
+      string       RISCV_DIR = getenv("RISCV"); // "/opt/riscv";
+  `else
+      string       RISCV_DIR = "$RISCV"; // "/opt/riscv";
+  `endif
+
+  `include "parameter-defs.vh"
 
   logic        clk;
   logic        reset_ext, reset;
@@ -64,12 +70,6 @@ module testbench;
   // Variables that can be overwritten with $value$plusargs at start of simulation
   string       TEST;
   integer      INSTR_LIMIT;
-`ifdef VERILATOR
-  string       RISCV_DIR = getenvval("RISCV"); // "/opt/riscv";
-`else
-  string       RISCV_DIR = getenv("RISCV"); // "/opt/riscv";
-`endif
-  // string       RISCV_DIR = "/opt/riscv";
 
   // DUT signals
   logic [P.AHBW-1:0]    HRDATAEXT;
@@ -128,7 +128,7 @@ module testbench;
                           if (P.ZICSR_SUPPORTED)  tests = {arch64c, arch64cpriv};
                           else                    tests = {arch64c};
         "arch64m":      if (P.M_SUPPORTED)        tests = arch64m;
-        "arch64a":      if (P.A_SUPPORTED)        tests = arch64a;
+        "arch64a_amo":      if (P.A_SUPPORTED | P.ZAAMO_SUPPORTED)        tests = arch64a_amo;
         "arch64f":      if (P.F_SUPPORTED)        tests = arch64f;
         "arch64d":      if (P.D_SUPPORTED)        tests = arch64d;  
         "arch64f_fma":  if (P.F_SUPPORTED)        tests = arch64f_fma;
@@ -142,7 +142,7 @@ module testbench;
         "imperas64d":   if (P.D_SUPPORTED)        tests = imperas64d;
         "imperas64m":   if (P.M_SUPPORTED)        tests = imperas64m;
         "wally64q":     if (P.Q_SUPPORTED)        tests = wally64q;
-        "wally64a":     if (P.A_SUPPORTED)        tests = wally64a;
+        "wally64a_lrsc":     if (P.A_SUPPORTED | P.ZALRSC_SUPPORTED)        tests = wally64a_lrsc;
         "imperas64c":   if (P.C_SUPPORTED)        tests = imperas64c;
                         else                      tests = imperas64iNOc;
         "custom":                                 tests = custom;
@@ -181,7 +181,7 @@ module testbench;
                           if (P.ZICSR_SUPPORTED)  tests = {arch32c, arch32cpriv};
                           else                    tests = {arch32c};
         "arch32m":      if (P.M_SUPPORTED)        tests = arch32m;
-        "arch32a":      if (P.A_SUPPORTED)        tests = arch32a;
+        "arch32a_amo":      if (P.A_SUPPORTED | P.ZAAMO_SUPPORTED)  tests = arch32a_amo; 
         "arch32f":      if (P.F_SUPPORTED)        tests = arch32f;
         "arch32d":      if (P.D_SUPPORTED)        tests = arch32d;
         "arch32f_fma":  if (P.F_SUPPORTED)        tests = arch32f_fma;
@@ -193,7 +193,7 @@ module testbench;
         "imperas32i":                             tests = imperas32i;
         "imperas32f":   if (P.F_SUPPORTED)        tests = imperas32f;
         "imperas32m":   if (P.M_SUPPORTED)        tests = imperas32m;
-        "wally32a":     if (P.A_SUPPORTED)        tests = wally32a;
+        "wally32a_lrsc":     if (P.A_SUPPORTED | P.ZALRSC_SUPPORTED)        tests = wally32a_lrsc; 
         "imperas32c":   if (P.C_SUPPORTED)        tests = imperas32c;
                         else                      tests = imperas32iNOc;
         "wally32i":                               tests = wally32i; 
@@ -225,6 +225,10 @@ module testbench;
       $display("TEST %s not supported in this configuration", TEST);
       $finish;
     end
+`ifdef MAKEVCD
+    $dumpfile("testbench.vcd");
+    $dumpvars;
+`endif
   end // initial begin
 
   // Model the testbench as an fsm.
@@ -260,9 +264,9 @@ module testbench;
   assign ResetThreshold = 3'd5;
 
   initial begin
-    TestBenchReset = 1;
+    TestBenchReset = 1'b1;
     # 100;
-    TestBenchReset = 0;
+    TestBenchReset = 1'b0;
   end
 
   always_ff @(posedge clk)
@@ -317,7 +321,11 @@ module testbench;
   // Find the test vector files and populate the PC to function label converter
   ////////////////////////////////////////////////////////////////////////////////
   logic [P.XLEN-1:0] testadr;
-  always_comb begin
+
+  //VCS ignores the dynamic types while processing the implicit sensitivity lists of always @*, always_comb, and always_latch
+  //procedural blocks. VCS supports the dynamic types in the implicit sensitivity list of always @* block as specified in the Section 9.2 of the IEEE Standard SystemVerilog Specification 1800-2012.
+  //To support memory load and dump task verbosity: flag : -diag sys_task_mem
+  always @(*) begin
   	begin_signature_addr = ProgramAddrLabelArray["begin_signature"];
  	end_signature_addr = ProgramAddrLabelArray["sig_end_canary"];
   	signature_size = end_signature_addr - begin_signature_addr;
@@ -353,7 +361,7 @@ module testbench;
         memfilename = {RISCV_DIR, "/linux-testvectors/ram.bin"};
         bootmemfilename = {RISCV_DIR, "/linux-testvectors/bootmem.bin"};
         uartoutfilename = {"logs/", TEST, "_uart.out"};
-        uartoutfile = $fopen(uartoutfilename, "wb");
+        uartoutfile = $fopen(uartoutfilename, "w"); // delete UART output file
       end
       else            memfilename = {pathname, tests[test], ".elf.memfile"};
       if (riscofTest) begin
@@ -418,6 +426,8 @@ module testbench;
         else $display("FAIL: %d test programs had errors", totalerrors);
 `ifdef VERILATOR // this macro is defined when verilator is used
         $finish; // Simulator Verilator needs $finish to terminate simulation.
+`elsif SIM_VCS // this macro is defined when vcs is used
+        $finish; // Simulator VCS needs $finish to terminate simulation.
 `else
          $stop; // if this is changed to $finish for Questa, wally-batch.do does not go to the next step to run coverage, and wally.do terminates without allowing GUI debug
 `endif
@@ -506,24 +516,24 @@ module testbench;
     always @(posedge clk) 
       if (ResetMem)  // program memory is sometimes reset (e.g. for CoreMark, which needs zeroed memory)
         for (adrindex=0; adrindex<(P.UNCORE_RAM_RANGE>>1+(P.XLEN/32)); adrindex = adrindex+1) 
-          dut.uncoregen.uncore.ram.ram.memory.RAM[adrindex] = 0;
+          dut.uncoregen.uncore.ram.ram.memory.RAM[adrindex] = '0;
 
   ////////////////////////////////////////////////////////////////////////////////
   // Actual hardware
   ////////////////////////////////////////////////////////////////////////////////
 
   // instantiate device to be tested
-  assign GPIOIN = 0;
-  assign UARTSin = 1;
-  assign SPIIn = 0;
+  assign GPIOIN = '0;
+  assign UARTSin = 1'b1;
+  assign SPIIn = 1'b0;
 
   if(P.EXT_MEM_SUPPORTED) begin
     ram_ahb #(.P(P), .BASE(P.EXT_MEM_BASE), .RANGE(P.EXT_MEM_RANGE)) 
     ram (.HCLK, .HRESETn, .HADDR, .HWRITE, .HTRANS, .HWDATA, .HSELRam(HSELEXT), 
       .HREADRam(HRDATAEXT), .HREADYRam(HREADYEXT), .HRESPRam(HRESPEXT), .HREADY, .HWSTRB);
   end else begin 
-    assign HREADYEXT = 1;
-    assign {HRESPEXT, HRDATAEXT} = 0;
+    assign HREADYEXT = 1'b1;
+    assign {HRESPEXT, HRDATAEXT} = '0;
   end
 
   if(P.SDC_SUPPORTED) begin : sdcard
@@ -539,9 +549,9 @@ module testbench;
     assign SDCDat = sd_dat_reg_t ? sd_dat_reg_o : sd_dat_i;
     assign SDCDatIn = SDCDat;
  -----/\----- EXCLUDED -----/\----- */
-    assign SDCIntr = 0;
+    assign SDCIntr = 1'b0;
   end else begin
-    assign SDCIntr = 0;
+    assign SDCIntr = 1'b0;
   end
 
   wallypipelinedsoc  #(P) dut(.clk, .reset_ext, .reset, .HRDATAEXT, .HREADYEXT, .HRESPEXT, .HSELEXT, .HSELEXTSDC,
@@ -551,7 +561,7 @@ module testbench;
 
   // generate clock to sequence tests
   always begin
-    clk = 1; # 5; clk = 0; # 5;
+    clk = 1'b1; # 5; clk = 1'b0; # 5;
   end
 
   /*
@@ -601,7 +611,8 @@ module testbench;
     always @(posedge clk) begin
       if (TEST == "buildroot") begin
         if (~dut.uncoregen.uncore.uartgen.uart.MEMWb & dut.uncoregen.uncore.uartgen.uart.uartPC.A == 3'b000 & ~dut.uncoregen.uncore.uartgen.uart.uartPC.DLAB) begin
-          $fwrite(uartoutfile, "%c", dut.uncoregen.uncore.uartgen.uart.uartPC.Din);
+          $fwrite(uartoutfile, "%c", dut.uncoregen.uncore.uartgen.uart.uartPC.Din); // append characters one at a time so we see a consistent log appearing during the run
+          $fflush(uartoutfile);
         end
       end
     end
@@ -622,11 +633,10 @@ module testbench;
 			      dut.core.ieu.dp.regf.a3 == 3 & 
 			      dut.core.ieu.dp.regf.wd3 == 1)) |
            ((InstrM == 32'h6f | InstrM == 32'hfc32a423 | InstrM == 32'hfc32a823) & dut.core.ieu.c.InstrValidM ) |
-           ((dut.core.lsu.IEUAdrM == ProgramAddrLabelArray["tohost"]) & InstrMName == "SW" );
-  //assign DCacheFlushStart =  TestComplete;
+           ((dut.core.lsu.IEUAdrM == ProgramAddrLabelArray["tohost"] & dut.core.lsu.IEUAdrM != 0) & InstrMName == "SW" );
   end
   
-  DCacheFlushFSM #(P) DCacheFlushFSM(.clk(clk), .reset(reset), .start(DCacheFlushStart), .done(DCacheFlushDone));
+  DCacheFlushFSM #(P) DCacheFlushFSM(.clk, .start(DCacheFlushStart), .done(DCacheFlushDone));
 
   if(P.ZICSR_SUPPORTED) begin
     logic [P.XLEN-1:0] Minstret;
@@ -634,7 +644,7 @@ module testbench;
     always @(negedge clk) begin
       if (INSTR_LIMIT > 0) begin
         if((Minstret != 0) && (Minstret % 'd100000 == 0)) $display("Reached %d instructions", Minstret);
-        if((Minstret == INSTR_LIMIT) & (INSTR_LIMIT!=0)) begin $stop; $stop; end
+        if((Minstret == INSTR_LIMIT) & (INSTR_LIMIT!=0)) begin $finish; end
       end
     end
 end
@@ -880,7 +890,10 @@ end
     if (errors) $display("%s failed with %d errors. :(", TestName, errors);
     else $display("%s succeeded.  Brilliant!!!", TestName);
   endtask
-  
+ 
+`ifdef PMP_COVERAGE
+test_pmp_coverage #(P) pmp_inst(clk);
+`endif
   /* verilator lint_on WIDTHTRUNC */
   /* verilator lint_on WIDTHEXPAND */
 

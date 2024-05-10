@@ -162,7 +162,9 @@ module fpu import cvw::*;  #(parameter cvw_t P) (
   logic                        StallUnpackedM;                     // Stall unpacker outputs during multicycle fdivsqrt
   logic [P.FLEN-1:0]           SgnExtXE;                           // Sign-extended X input for move to integer
   logic                        mvsgn;                              // sign bit for extending move
-  logic [P.FLEN-1:0]           FliResE;                            // Floating-point load immediate value
+  logic [P.FLEN-1:0]           FliResE;                            // Zfa Floating-point load immediate value
+  logic [P.FLEN-1:0]           FRoundE;                            // Zfa fround output
+  logic [4:0]                  FRoundFlagsE;                       // Zfa fround flags
 
   //////////////////////////////////////////////////////////////////////////////////////////
   // Decode Stage: fctrl decoder, read register file
@@ -218,7 +220,7 @@ module fpu import cvw::*;  #(parameter cvw_t P) (
   
   // Select NAN-boxed value of Z = 0.0 in proper format for FMA for multiply X*Y+Z
   // For add and subtract, Z comes from second source operand
-  if(P.FPSIZES == 1) assign BoxedZeroE = 0;
+  if(P.FPSIZES == 1) assign BoxedZeroE = '0;
   else if(P.FPSIZES == 2) 
     mux2 #(P.FLEN) fmulzeromux ({{P.FLEN-P.LEN1{1'b1}}, {P.LEN1{1'b0}}}, (P.FLEN)'(0), FmtE, BoxedZeroE); // NaN boxing zeroes
   else if(P.FPSIZES == 3 | P.FPSIZES == 4)
@@ -267,15 +269,25 @@ module fpu import cvw::*;  #(parameter cvw_t P) (
     .ToInt(FWriteIntE), .XZero(XZeroE), .Fmt(FmtE), .Ce(CeE), .ShiftAmt(CvtShiftAmtE), 
     .ResSubnormUf(CvtResSubnormUfE), .Cs(CsE), .IntZero(IntZeroE), .LzcIn(CvtLzcInE));
 
-  // floating-point load immediate: fli
+  // ZFA: fround and floating-point load immediate fli
   if (P.ZFA_SUPPORTED) begin
     logic [4:0] Rs1E;
     logic [1:0] Fmt2E; // Two-bit format field from instruction
-    
+
+    // fround
+    fround #(P) fround(.Xs(XsE), .Xe(XeE), .Xm(XmE), 
+                       .XNaN(XNaNE), .XSNaN(XSNaNE), .XZero(XZeroE), .Fmt(FmtE), 
+                       .FRound(FRoundE), .FRoundFlags(FRoundFlagsE));
+
+    // fli
     flopenrc #(5) Rs1EReg(clk, reset, FlushE, ~StallE, InstrD[19:15], Rs1E);
     flopenrc #(2) Fmt2EReg(clk, reset, FlushE, ~StallE, InstrD[26:25], Fmt2E);
     fli #(P) fli(.Rs1(Rs1E), .Fmt(Fmt2E), .Imm(FliResE)); 
-  end else assign FliResE = 0;
+  end else begin
+    assign FRoundE = '0; 
+    assign FRoundFlagsE = '0;
+    assign FliResE = '0;
+  end
 
   // fmv.*.x: NaN Box SrcA to extend integer to requested FP size 
   if(P.FPSIZES == 1) 
